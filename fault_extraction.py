@@ -137,3 +137,4 @@ supabase.table("fault_SHP").upsert(data_dic, on_conflict=["Fault Number"]).execu
 
 
 
+
