@@ -7,18 +7,17 @@ import pytz
 import ast
 from supabase import create_client
 from dotenv import load_dotenv
+import time
 
 # Define Singapore timezone
 sg_timezone = pytz.timezone('Asia/Singapore')
 today = datetime.datetime.now(sg_timezone).date()
 
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=r"api_key.env")
+load_dotenv(dotenv_path="api_key.env")   # be caseful of this need to adjust the path and add "r" in front
 # Fetch from environment variables
 email = os.getenv("email")
 password = os.getenv("password")
-
-site_name = 113
 
 
 # Function to get access token
@@ -31,22 +30,24 @@ def get_access_token(email, password):
 # Step 1: Get the access token
 access_token = get_access_token(email, password)
 
+start_date = today - datetime.timedelta(days=90)  # 3 months before today
+# Format dates as YYYY-MM-DD
+start_date_str = start_date.strftime("%Y-%m-%d")
+end_date_str = today.strftime("%Y-%m-%d")
+
+# Status filters
+statuses = []
+
+# site_name = [248, 254, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 274]   # 13 sites, this is wrong, need to be string
+site_name = ['248', '254', '263', '264', '265', '266', '267', '268', '269', '270', '271', '272', '274']   # 13 sites, need to be string
+
+# Pagination variables
+per_page = 10  # Adjust based on API limits
+total_pages = 5000  # Define how many pages you want to fetch (e.g., 5 pages)
+
+all_data = []  # List to collect all the fault data
 # Function to fetch paginated fault data within the date range
-def fetch_faults(access_token):
-    start_date = today - datetime.timedelta(days=90)  # 3 months before today
-    # Format dates as YYYY-MM-DD
-    start_date_str = start_date.strftime("%Y-%m-%d")
-    end_date_str = today.strftime("%Y-%m-%d")
-
-    # Status filters
-    statuses = []
-
-    # Pagination variables
-    per_page = 10  # Adjust based on API limits
-    total_pages = 5000  # Define how many pages you want to fetch (e.g., 5 pages)
-
-    all_data = []  # List to collect all the fault data
-
+def fetch_faults(access_token, start_date_str, end_date_str, statuses, pm_site_id):
     # Loop through pages and fetch data
     for page in range(1, total_pages + 1):
         # Construct the URL with parameters directly in the query string
@@ -74,17 +75,20 @@ def fetch_faults(access_token):
 
     return all_data  # Return the collected data
 
-
 # Step 2: Fetch fault data within the date range and status filters
-if access_token:
-    all_fault_data = fetch_faults(access_token)  # Get the fault data
 
-    # Convert the list of dictionaries into a DataFrame
-    df = pd.DataFrame(all_fault_data)
+fault_holder = []
+for site_name in site_name:
+    fault_data = fetch_faults(access_token, start_date_str, end_date_str, statuses, site_name)  # Get the fault data
+    df = pd.DataFrame(fault_data)
+    fault_holder.append(df)
+    time.sleep(5)
+
+df = pd.concat(fault_holder, ignore_index=True)
 
 df = df.loc[:, ["fault_number", "site_fault_number", "trade_name", "category_name","type_name", "impact_name", "site_and_location", 
                 "created_user","responded_date", "site_visited_date", "ra_acknowledged_date", "work_started_date", "work_completed_date", 
-                "latest_status", "fault_remarks", 'source', "created_at"]]
+                "action_taken", "attended_by", "latest_status", "fault_remarks", 'source', "created_at"]]
 
 # Convert the string to a Python dictionary
 df["site_and_location"] = df["site_and_location"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
@@ -102,18 +106,18 @@ df_loc = df_loc.set_index(df["site_and_location"].index)
 # Merge with original DataFrame
 df_flattened = df.drop(columns=["site_and_location"]).join(df_loc)
 
-df_flattened.columns = ['fault_number', 'Site Fault Number', 'Trade', 'Trade Category', 'Type of Fault',
-       'impact', 'Reported By', 'Fault Acknowledged Date', 'Responded on Site Date',
-       'RA Conducted Date', 'Work Started Date', 'Work Completed Date',
-       'Status', 'Remarks', 'Source', 'Reported Date', 'Site',
-       'Building', 'Floor', 'Room', 'Assets']
+df_flattened.columns = ['Fault Number', 'Site Fault Number', 'Trade', 'Trade Category', 'Type of Fault',
+                        'Impact', 'Reported By', 'Fault Acknowledged Date', 'Responded on Site Date',
+                        'RA Conducted Date', 'Work Started Date', 'Work Completed Date', 'Action(s) Taken', 'Attended By',
+                        'Status', 'Remarks', 'Source', 'Reported Date', 'Site', 'Building', 'Floor', 'Room', 'Assets']
 
-df_final = df_flattened[['fault_number', 'Site Fault Number', 'Trade', 'Trade Category', 'Type of Fault',
-                             'impact', 'Site', 'Building', 'Floor', 'Room', 'Assets', 'Reported Date',
+df_final = df_flattened[['Fault Number', 'Site Fault Number', 'Trade', 'Trade Category', 'Type of Fault',
+                             'Impact', 'Site', 'Building', 'Floor', 'Room', 'Assets', 'Reported Date',
                              'Fault Acknowledged Date', 'Responded on Site Date','RA Conducted Date',
-                             'Work Started Date', 'Work Completed Date', 'Status', 'Reported By', 'Remarks', 'Source']]
+                             'Work Started Date', 'Work Completed Date', 'Status', 'Reported By', 'Remarks', 'Source', 'Action(s) Taken', 'Attended By']]
 
-df_final["Fault Link"] = "https://ismm.sg/ce/fault/" + df_final['fault_number'].str.replace('FID', '', regex=False)
+df_final["Fault Link"] = "https://ismm.sg/ce/fault/" + df_final['Fault Number'].str.replace('FID', '', regex=False)
+
 
 # Load environment variables
 load_dotenv(dotenv_path="myenv.env")
@@ -129,3 +133,4 @@ data_dic = df_final.to_dict(orient="records")
 
 # Upsert data into Supabase table
 supabase.table("fault_AFT").upsert(data_dic, on_conflict=["fault_number"]).execute()
+
