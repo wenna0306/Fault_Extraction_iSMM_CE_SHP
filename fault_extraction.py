@@ -30,7 +30,7 @@ def get_access_token(email, password):
 # Step 1: Get the access token
 access_token = get_access_token(email, password)
 
-start_date = today - datetime.timedelta(days=3)  # 3 months before today
+start_date = today - datetime.timedelta(days=90)  # 3 months before today
 # Format dates as YYYY-MM-DD
 start_date_str = start_date.strftime("%Y-%m-%d")
 end_date_str = today.strftime("%Y-%m-%d")
@@ -132,6 +132,7 @@ data_dic = df_final.to_dict(orient="records")
 
 # Upsert data into Supabase table
 supabase.table("fault_SHP").upsert(data_dic, on_conflict=["Fault Number"]).execute()
+
 
 
 
