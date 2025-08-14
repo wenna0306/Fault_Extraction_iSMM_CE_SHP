@@ -30,7 +30,7 @@ def get_access_token(email, password):
 # Step 1: Get the access token
 access_token = get_access_token(email, password)
 
-start_date = today - datetime.timedelta(days=90)  # 3 months before today
+start_date = today - datetime.timedelta(days=3)  # 3 months before today
 # Format dates as YYYY-MM-DD
 start_date_str = start_date.strftime("%Y-%m-%d")
 end_date_str = today.strftime("%Y-%m-%d")
@@ -38,16 +38,17 @@ end_date_str = today.strftime("%Y-%m-%d")
 # Status filters
 statuses = []
 
-# site_name = [248, 254, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 274]   # 13 sites, this is wrong, need to be string
-site_name = ['248', '254', '263', '264', '265', '266', '267', '268', '269', '270', '271', '272', '274']   # 13 sites, need to be string
+# site_name = [248, 254, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 274]   # 13 sites
+site_list = ['248', '254', '263', '264', '265', '266', '267', '268', '269', '270', '271', '272', '274']   # 13 sites, need to be string
 
 # Pagination variables
 per_page = 10  # Adjust based on API limits
 total_pages = 5000  # Define how many pages you want to fetch (e.g., 5 pages)
 
-all_data = []  # List to collect all the fault data
+
 # Function to fetch paginated fault data within the date range
-def fetch_faults(access_token, start_date_str, end_date_str, statuses, pm_site_id):
+def fetch_faults(access_token, start_date_str, end_date_str, statuses, site_name):
+    all_data = []  # List to collect all the fault data
     # Loop through pages and fetch data
     for page in range(1, total_pages + 1):
         # Construct the URL with parameters directly in the query string
@@ -76,14 +77,12 @@ def fetch_faults(access_token, start_date_str, end_date_str, statuses, pm_site_i
     return all_data  # Return the collected data
 
 # Step 2: Fetch fault data within the date range and status filters
-
 fault_holder = []
-for site_name in site_name:
+for site_name in site_list:
     fault_data = fetch_faults(access_token, start_date_str, end_date_str, statuses, site_name)  # Get the fault data
     df = pd.DataFrame(fault_data)
     fault_holder.append(df)
     time.sleep(5)
-
 df = pd.concat(fault_holder, ignore_index=True)
 
 df = df.loc[:, ["fault_number", "site_fault_number", "trade_name", "category_name","type_name", "impact_name", "site_and_location", 
@@ -133,6 +132,7 @@ data_dic = df_final.to_dict(orient="records")
 
 # Upsert data into Supabase table
 supabase.table("fault_SHP").upsert(data_dic, on_conflict=["Fault Number"]).execute()
+
 
 
 
